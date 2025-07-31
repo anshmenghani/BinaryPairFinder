@@ -1,5 +1,6 @@
 import pandas as pd
 import tkinter as tk
+import time
 from tkinter import filedialog, messagebox, scrolledtext
 import networkx as nx
 import numpy as np
@@ -7,7 +8,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 
 
-df = pd.DataFrame()  
+df = pd.DataFrame()
 clusters = []
 wds_coords = None
 log_messages = []
@@ -31,7 +32,7 @@ def load_csv():
                 return
             df['distance_pc'] = 1000.0 / df['parallax']
             clusters = []
-            log(f"Loaded file: {file_path}")
+            log(f"\nLoaded file: {file_path}")
             log(f"Entries loaded: {len(df)}")
         except Exception as e:
             messagebox.showerror("Error loading CSV", str(e))
@@ -45,20 +46,50 @@ def format_entry(index):
         pass
     return f"{index}"
 
-def find_matches(ra_thresh, dec_thresh, ruwe_thresh, dist_thresh, min_ruwe):
+def hms_to_degrees(hms_str):
+    try:
+        parts = list(map(float, hms_str.strip().split(':')))
+        if len(parts) != 3:
+            raise ValueError("Invalid HMS format. Use HH:MM:SS")
+        h, m, s = parts
+        return (h + m / 60 + s / 3600) * 15
+    except Exception:
+        raise ValueError("Failed to parse RA HMS input (HH:MM:SS)")
+
+def dms_to_degrees(dms_str):
+    try:
+        parts = list(map(float, dms_str.strip().split(':')))
+        if len(parts) != 3:
+            raise ValueError("Invalid DMS format. Use DD:MM:SS")
+        d, m, s = parts
+        sign = -1 if d < 0 else 1
+        return sign * (abs(d) + m / 60 + s / 3600)
+    except Exception:
+        raise ValueError("Failed to parse Dec DMS input (DD:MM:SS)")
+
+def find_matches(min_ra_sep, max_ra_sep, min_dec_sep, max_dec_sep, ruwe_thresh, dist_thresh, min_ruwe, max_ruwe, timed_rows=False):
+    if timed_rows:
+        df_sampled = df.sample(n=timed_rows, random_state=42).reset_index(drop=True)
+    else:
+        df_sampled = df.copy()
     G = nx.Graph()
-    for i, row_i in df.iterrows():
-        if row_i['ruwe'] < min_ruwe:
+    for i, row_i in df_sampled.iterrows():
+        # Filter stars outside RUWE range
+        if row_i['ruwe'] < min_ruwe or row_i['ruwe'] > max_ruwe:
             continue
         G.add_node(i)
-        for j in range(i + 1, len(df)):
-            row_j = df.iloc[j]
-            if row_j['ruwe'] < min_ruwe:
+        for j in range(i + 1, len(df_sampled)):
+            row_j = df_sampled.iloc[j]
+            if row_j['ruwe'] < min_ruwe or row_j['ruwe'] > max_ruwe:
                 continue
-            if (abs(row_i['ra'] - row_j['ra']) <= ra_thresh and
-                abs(row_i['dec'] - row_j['dec']) <= dec_thresh and
-                abs(row_i['ruwe'] - row_j['ruwe']) <= ruwe_thresh and
-                abs(row_i['distance_pc'] - row_j['distance_pc']) <= dist_thresh):
+            ra_diff = abs(row_i['ra'] - row_j['ra'])
+            dec_diff = abs(row_i['dec'] - row_j['dec'])
+            ruwe_diff = abs(row_i['ruwe'] - row_j['ruwe'])
+            dist_diff = abs(row_i['distance_pc'] - row_j['distance_pc'])
+            if (min_ra_sep <= ra_diff <= max_ra_sep and
+                min_dec_sep <= dec_diff <= max_dec_sep and
+                ruwe_diff <= ruwe_thresh and
+                dist_diff <= dist_thresh):
                 G.add_edge(i, j)
 
     grouped = [list(component) for component in nx.connected_components(G) if len(component) >= 2]
@@ -70,14 +101,29 @@ def run_matching():
         messagebox.showwarning("No Data", "Please load a CSV file first.")
         return
     try:
-        ra_thresh = float(ra_entry.get())
-        dec_thresh = float(dec_entry.get())
+        min_ra_sep = hms_to_degrees(min_ra_hms_entry.get())
+        max_ra_sep = hms_to_degrees(max_ra_hms_entry.get())
+        min_dec_sep = dms_to_degrees(min_dec_dms_entry.get())
+        max_dec_sep = dms_to_degrees(max_dec_dms_entry.get())
         ruwe_thresh = float(ruwe_entry.get())
         dist_thresh = float(dist_entry.get())
         min_ruwe = float(min_ruwe_entry.get())
+        max_ruwe = float(max_ruwe_entry.get())
+
+        # Input validation for ranges
+        if min_ra_sep > max_ra_sep:
+            messagebox.showerror("Input Error", "Minimum RA separation cannot be greater than maximum RA separation.")
+            return
+        if min_dec_sep > max_dec_sep:
+            messagebox.showerror("Input Error", "Minimum Dec separation cannot be greater than maximum Dec separation.")
+            return
+        if min_ruwe > max_ruwe:
+            messagebox.showerror("Input Error", "Minimum RUWE cannot be greater than maximum RUWE.")
+            return
 
         log("\nRunning match algorithm...")
-        clusters = find_matches(ra_thresh, dec_thresh, ruwe_thresh, dist_thresh, min_ruwe)
+        clusters = find_matches(min_ra_sep, max_ra_sep, min_dec_sep, max_dec_sep, ruwe_thresh, dist_thresh, min_ruwe, max_ruwe)
+        log(f"Matching complete. Found {len(clusters)} group(s).")
 
         if not clusters:
             log("No matches found.")
@@ -108,7 +154,7 @@ def export_to_csv():
         save_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
         if save_path:
             result_df.to_csv(save_path, index=False)
-            log(f"Exported results to: {save_path}")
+            log(f"\nExported results to: {save_path}")
             messagebox.showinfo("Success", f"Exported to {save_path}")
     except Exception as e:
         messagebox.showerror("Export Error", str(e))
@@ -131,7 +177,7 @@ def load_wds_catalog():
                 coords.append(coord)
             except Exception:
                 continue
-    log(f"Loaded WDS catalog with {len(coords)} entries from: {file_path}")
+    log(f"\nLoaded WDS catalog with {len(coords)} entries from: {file_path}")
     return SkyCoord(coords)
 
 def compare_with_wds():
@@ -157,54 +203,75 @@ def compare_with_wds():
     except Exception as e:
         messagebox.showerror("Error", f"Failed during coordinate matching:\n{e}")
 
+# GUI SETUP
 root = tk.Tk()
 
 try:
-    icon_img = tk.PhotoImage(file="BinaryStarLogo.ico")  
+    icon_img = tk.PhotoImage(file="BinaryStarLogo.ico")
     root.iconphoto(True, icon_img)
 except Exception as e:
-    log(f"Could not load icon: {e}")
+    # No results_text yet, so just print
+    print(f"Could not load icon: {e}")
 
 root.title("Binary Star Finder")
 
 title_label = tk.Label(root, text="Binary Star Finder", font=("Helvetica", 18, "bold"))
-title_label.grid(row=0, column=0, columnspan=2, pady=(10, 0))
+title_label.grid(row=0, column=0, columnspan=6, pady=(10, 0))
 author_label = tk.Label(root, text="By: Ansh Menghani, ansh.menghani@gmail.com", font=("Helvetica", 10, "italic"))
-author_label.grid(row=1, column=0, columnspan=2, pady=(0, 10))
+author_label.grid(row=1, column=0, columnspan=6, pady=(0, 10))
 
-tk.Button(root, text="Select Gaia CSV File", command=load_csv).grid(row=2, column=0, columnspan=2, pady=5)
+tk.Button(root, text="Select Gaia CSV File", command=load_csv).grid(row=2, column=0, columnspan=6, pady=5)
 
-tk.Label(root, text="RA Threshold (deg):").grid(row=3, column=0)
-ra_entry = tk.Entry(root)
-ra_entry.insert(0, "0.1")
-ra_entry.grid(row=3, column=1)
+# Min and Max RA Thresholds (HH:MM:SS)
+tk.Label(root, text="Min RA Separation (HH:MM:SS):").grid(row=3, column=0)
+min_ra_hms_entry = tk.Entry(root)
+min_ra_hms_entry.insert(0, "00:00:00")
+min_ra_hms_entry.grid(row=3, column=1)
 
-tk.Label(root, text="Dec Threshold (deg):").grid(row=4, column=0)
-dec_entry = tk.Entry(root)
-dec_entry.insert(0, "0.1")
-dec_entry.grid(row=4, column=1)
+tk.Label(root, text="Max RA Separation (HH:MM:SS):").grid(row=3, column=2)
+max_ra_hms_entry = tk.Entry(root)
+max_ra_hms_entry.insert(0, "00:06:00")  # approx 0.1 deg
+max_ra_hms_entry.grid(row=3, column=3)
 
+# Min and Max Dec Thresholds (DD:MM:SS)
+tk.Label(root, text="Min Dec Separation (DD:MM:SS):").grid(row=4, column=0)
+min_dec_dms_entry = tk.Entry(root)
+min_dec_dms_entry.insert(0, "00:00:00")
+min_dec_dms_entry.grid(row=4, column=1)
+
+tk.Label(root, text="Max Dec Separation (DD:MM:SS):").grid(row=4, column=2)
+max_dec_dms_entry = tk.Entry(root)
+max_dec_dms_entry.insert(0, "00:06:00")  # approx 0.1 deg
+max_dec_dms_entry.grid(row=4, column=3)
+
+# RUWE inputs
 tk.Label(root, text="RUWE Difference Threshold:").grid(row=5, column=0)
 ruwe_entry = tk.Entry(root)
 ruwe_entry.insert(0, "0.5")
 ruwe_entry.grid(row=5, column=1)
 
-tk.Label(root, text="Distance Threshold (pc):").grid(row=6, column=0)
-dist_entry = tk.Entry(root)
-dist_entry.insert(0, "2")
-dist_entry.grid(row=6, column=1)
-
-tk.Label(root, text="Minimum RUWE:").grid(row=7, column=0)
+tk.Label(root, text="Min RUWE:").grid(row=5, column=2)
 min_ruwe_entry = tk.Entry(root)
 min_ruwe_entry.insert(0, "1.2")
-min_ruwe_entry.grid(row=7, column=1)
+min_ruwe_entry.grid(row=5, column=3)
 
-tk.Button(root, text="Find Matches", command=run_matching).grid(row=8, column=0, columnspan=2, pady=5)
-tk.Button(root, text="Export to CSV", command=export_to_csv).grid(row=9, column=0, columnspan=2)
-tk.Button(root, text="Compare with WDS Catalog", command=compare_with_wds).grid(row=10, column=0, columnspan=2, pady=5)
+tk.Label(root, text="Max RUWE:").grid(row=6, column=0)
+max_ruwe_entry = tk.Entry(root)
+max_ruwe_entry.insert(0, "2.0")
+max_ruwe_entry.grid(row=6, column=1)
 
-results_text = scrolledtext.ScrolledText(root, width=100, height=20)
-results_text.grid(row=11, column=0, columnspan=2)
+# Distance threshold
+tk.Label(root, text="Distance Threshold (pc):").grid(row=6, column=2)
+dist_entry = tk.Entry(root)
+dist_entry.insert(0, "2")
+dist_entry.grid(row=6, column=3)
+
+tk.Button(root, text="Find Matches", command=run_matching).grid(row=7, column=0, columnspan=6, pady=5)
+tk.Button(root, text="Export to CSV", command=export_to_csv).grid(row=8, column=0, columnspan=6)
+tk.Button(root, text="Compare with WDS Catalog", command=compare_with_wds).grid(row=9, column=0, columnspan=6, pady=5)
+
+results_text = scrolledtext.ScrolledText(root, width=120, height=20)
+results_text.grid(row=10, column=0, columnspan=6)
 
 copyright_label = tk.Label(
     root,
@@ -212,7 +279,7 @@ copyright_label = tk.Label(
     font=("Helvetica", 8),
     fg="gray"
 )
-copyright_label.grid(row=12, column=0, columnspan=2, pady=(5, 10))
+copyright_label.grid(row=11, column=0, columnspan=6, pady=(5, 10))
 
 def show_instructions():
     instr_win = tk.Toplevel(root)
@@ -231,20 +298,29 @@ Binary Star Finder Instructions & Definitions
 
 1. Parameter Definitions:
 -------------------------
-- RA Threshold (deg):
+- Min RA Separation (HH:MM:SS):
+  Minimum allowed difference in Right Ascension (in degrees) between stars to consider them as a pair.
+
+- Max RA Separation (HH:MM:SS):
   Maximum allowed difference in Right Ascension (in degrees) between stars to consider them as a pair.
 
-- Dec Threshold (deg):
+- Min Dec Separation (DD:MM:SS):
+  Minimum allowed difference in Declination (in degrees) between stars for pairing.
+
+- Max Dec Separation (DD:MM:SS):
   Maximum allowed difference in Declination (in degrees) between stars for pairing.
 
 - RUWE Difference Threshold:
   Maximum allowed difference in RUWE (Renormalized Unit Weight Error) values. RUWE indicates data quality; similar RUWE values suggest similar data reliability.
 
-- Distance Threshold (pc):
-  Maximum difference in distance (parsecs) between stars. Ensures physical proximity in space.
-
 - Minimum RUWE:
   Minimum RUWE value to filter stars with poor astrometric fits. Only stars with RUWE >= this value are considered.
+
+- Maximum RUWE:
+  Maximum RUWE value to exclude stars with poor astrometric fits above this limit.
+
+- Distance Threshold (pc):
+  Maximum difference in distance (parsecs) between stars. Ensures physical proximity in space.
 
 2. Reasoning for Choosing Parameters:
 ------------------------------------
@@ -285,9 +361,9 @@ Feel free to adjust thresholds to balance sensitivity and precision. Contact Ans
 """
 
     text_area.insert(tk.END, instructions)
-    text_area.configure(state=tk.DISABLED)  
+    text_area.configure(state=tk.DISABLED)
 
 instr_button = tk.Button(root, text="Instructions & Definitions", command=show_instructions)
-instr_button.grid(row=13, column=0, columnspan=2, pady=(5, 10))
+instr_button.grid(row=12, column=0, columnspan=6, pady=(5, 10))
 
 root.mainloop()
