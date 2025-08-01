@@ -10,7 +10,7 @@
   Maximum allowed difference in Declination (in degrees) between stars for pairing.
 
 - **RUWE Difference Threshold**:  
-  Maximum allowed difference in RUWE (Renormalized Unit Weight Error) values. RUWE indicates data quality; similar RUWE values suggest similar data reliability.
+  Maximum allowed difference in RUWE (Renormalized Unit Weight Error) values. RUWE indicates data quality; similar RUWE values suggest similar data reliability. Larger RUWE values suggest a lower fit to the astrometric single-star solution, potentially indicating binary stars or other light sources. 
 
 - **Distance Threshold (pc)**:  
   Maximum difference in distance (parsecs) between stars. Ensures physical proximity in space.
