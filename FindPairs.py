@@ -250,12 +250,12 @@ ruwe_entry = tk.Entry(root)
 ruwe_entry.insert(0, "0.5")
 ruwe_entry.grid(row=5, column=1)
 
-tk.Label(root, text="Min RUWE:").grid(row=5, column=2)
+tk.Label(root, text="RUWE Lower Bound:").grid(row=5, column=2)
 min_ruwe_entry = tk.Entry(root)
 min_ruwe_entry.insert(0, "1.2")
 min_ruwe_entry.grid(row=5, column=3)
 
-tk.Label(root, text="Max RUWE:").grid(row=6, column=0)
+tk.Label(root, text="RUWE Upper Bound:").grid(row=6, column=0)
 max_ruwe_entry = tk.Entry(root)
 max_ruwe_entry.insert(0, "2.0")
 max_ruwe_entry.grid(row=6, column=1)
@@ -311,7 +311,7 @@ Binary Star Finder Instructions & Definitions
   Maximum allowed difference in Declination (in degrees) between stars for pairing.
 
 - RUWE Difference Threshold:
-  Maximum allowed difference in RUWE (Renormalized Unit Weight Error) values. RUWE indicates data quality; similar RUWE values suggest similar data reliability.
+  Maximum allowed difference in RUWE (Renormalized Unit Weight Error) values. RUWE indicates data quality; similar RUWE values suggest similar data reliability. RUWE also indicated how well the astrometric solution fits the data. A higher RUWE (>~1.2) indicates a poorer fit to the single-star solution, potentially indicating binary stars or other light sources.
 
 - Minimum RUWE:
   Minimum RUWE value to filter stars with poor astrometric fits. Only stars with RUWE >= this value are considered.
