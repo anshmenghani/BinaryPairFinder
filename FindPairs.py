@@ -166,18 +166,46 @@ def load_wds_catalog():
     )
     if not file_path:
         return None
+
     coords = []
+    skipped = 0
     with open(file_path, 'r') as f:
         for line in f:
-            if len(line) < 80:
+            if len(line) < 18:
+                skipped += 1
                 continue
             coord_str = line[-18:].strip()
+
             try:
-                coord = SkyCoord(coord_str, unit=(u.hourangle, u.deg))
-                coords.append(coord)
+                # RA: first 8 characters (HHMMSS.ss)
+                ra_str = coord_str[0:8]
+                # Dec: rest (±DDMMSS.s)
+                dec_str = coord_str[8:]
+
+                if '.' not in ra_str or '.' not in dec_str:
+                    skipped += 1
+                    continue
+
+                # Convert RA to hours
+                ra_h = float(ra_str[0:2])
+                ra_m = float(ra_str[2:4])
+                ra_s = float(ra_str[4:])
+                ra_hours = ra_h + ra_m/60 + ra_s/3600
+
+                # Convert Dec to degrees
+                sign = -1 if dec_str[0] == '-' else 1
+                dec_d = float(dec_str[1:3])
+                dec_m = float(dec_str[3:5])
+                dec_s = float(dec_str[5:])
+                dec_deg = sign * (dec_d + dec_m/60 + dec_s/3600)
+
+                coords.append(SkyCoord(ra=ra_hours*u.hourangle, dec=dec_deg*u.deg))
             except Exception:
+                skipped += 1
                 continue
-    log(f"\nLoaded WDS catalog with {len(coords)} entries from: {file_path}")
+
+    log(f"\nLoaded WDS catalog with {len(coords)} valid entries "
+        f"(skipped {skipped} malformed lines) from: {file_path}")
     return SkyCoord(coords)
 
 def compare_with_wds():
@@ -348,7 +376,7 @@ Your WDS catalog should be a text file with star coordinates at the end of each 
 
 ... 12 34 56.7 +12 34 56.7
 
-Coordinates are in the format HH MM SS.S (RA) and ±DD MM SS.S (Dec).
+Coordinates are in the format HH MM SS.S (RA) and ±DD MM SS.S (Dec). If you include headers, they will be counted as malformed lines and skipped during WDS-Gaia matching.
 
 5. File Formats:
 ----------------

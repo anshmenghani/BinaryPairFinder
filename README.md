@@ -51,7 +51,7 @@ Your WDS catalog should be a text file with star coordinates at the end of each 
 ... 12 34 56.7 +12 34 56.7
 ```
 
-Coordinates are in the format HH MM SS.S (RA) and ±DD MM SS.S (Dec).
+Coordinates are in the format HH MM SS.S (RA) and ±DD MM SS.S (Dec). If you include headers, they will be counted as malformed lines and skipped during WDS-Gaia matching.
 
 ## 5. File Formats
 ---
